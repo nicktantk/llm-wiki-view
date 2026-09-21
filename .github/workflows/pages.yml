@@ -1,0 +1,57 @@
+name: Build the llm-wiki tree view
+
+# The wiki lives on GitCode (nicktantk/llm-wiki) and is public, so this repository holds no
+# copy of it: every run reads the tree over GitCode's REST API and renders one static page.
+# Nothing is mirrored, GitCode needs no secret, and this repository never writes back.
+on:
+  # The wiki changes when a human merges a Synthesis or Organize PR, which this side cannot
+  # observe — so it polls. Hourly is well inside how often that happens.
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+# What Pages deployment needs, and nothing more.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# A scheduled run and a manual one must never deploy over each other.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      # --ref main is the wiki's trunk: the only branch a human ever merges into.
+      - name: Render the tree
+        run: |
+          mkdir -p _site
+          python build/render_tree.py --ref main --out _site/index.html
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
